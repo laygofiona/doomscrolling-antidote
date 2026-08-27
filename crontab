@@ -1,0 +1,2 @@
+# Run a script every day at 7am and redirect output to Docker logs
+0 7 * * * root /pipeline/main.py >> /proc/1/fd/1 2>&1
