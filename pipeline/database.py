@@ -1,9 +1,19 @@
-import sqlite3
+"""SQLite persistence helpers for the pipeline's papers, newsletter, and podcast tables."""
+
 import json
+import sqlite3
 from enum import Enum
 
 
+def get_connection(db_path: str = "app.db") -> sqlite3.Connection:
+    """Open a SQLite connection with row_factory set for dict-like row access."""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def init_db(db_path: str = "app.db"):
+    """Create the papers, podcastEpisode, newsletter, and dailyRun tables if missing."""
     # Connects to file (creates app.db if it doesn't exist)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -17,7 +27,7 @@ def init_db(db_path: str = "app.db"):
         CREATE TABLE IF NOT EXISTS papers (
             arxiv_id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
-            authors TEXT NOT NULL,           -- Stored as JSON string (e.g., '["Author A", "Author B"]')
+            authors TEXT NOT NULL,           -- Stored as a JSON string, e.g. '["Author A"]'
             abstract TEXT NOT NULL,
             categories TEXT NOT NULL,        -- Stored as JSON string (e.g., '["cs.AI", "cs.LG"]')
             primary_category TEXT NOT NULL,
@@ -28,7 +38,7 @@ def init_db(db_path: str = "app.db"):
             ai_why_relevant TEXT,            -- Nullable
             fetched_at TEXT NOT NULL         -- ISO 8601 string
         );
-            
+
         CREATE TABLE IF NOT EXISTS podcastEpisode (
             id INTEGER PRIMARY KEY,
             title TEXT NOT NULL,
@@ -67,7 +77,7 @@ def init_db(db_path: str = "app.db"):
 
 
 def save_to_db(obj, table_name: str, db_path: str = "app.db"):
-    # Save an object to the specified table in the SQLite database
+    """Insert a Paper, PodcastEpisode, Newsletter, or DailyRun object into its table."""
     conn = sqlite3.connect(db_path, timeout=30)
     # Wait for locks held by other connections instead of failing immediately
     conn.execute("PRAGMA busy_timeout = 30000")
@@ -78,7 +88,10 @@ def save_to_db(obj, table_name: str, db_path: str = "app.db"):
         # in a single batch (e.g. matched under multiple keywords/categories)
         cursor.execute(
             """
-            INSERT OR IGNORE INTO papers (arxiv_id, title, authors, abstract, categories, primary_category, pdf_url, arxiv_url, updated_at, ai_summary, ai_why_relevant, fetched_at)
+            INSERT OR IGNORE INTO papers (
+                arxiv_id, title, authors, abstract, categories, primary_category,
+                pdf_url, arxiv_url, updated_at, ai_summary, ai_why_relevant, fetched_at
+            )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
@@ -100,7 +113,10 @@ def save_to_db(obj, table_name: str, db_path: str = "app.db"):
     elif table_name == "podcastEpisode":
         cursor.execute(
             """
-            INSERT INTO podcastEpisode (id, title, description, s3_url, duration_seconds, file_size_bytes, published_at, script, run_id)
+            INSERT INTO podcastEpisode (
+                id, title, description, s3_url, duration_seconds,
+                file_size_bytes, published_at, script, run_id
+            )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
@@ -134,7 +150,10 @@ def save_to_db(obj, table_name: str, db_path: str = "app.db"):
     elif table_name == "dailyRun":
         cursor.execute(
             """
-            INSERT INTO dailyRun (id, started_at, completed_at, status, error_message, newsletter_id, podcast_id, papers_ids)
+            INSERT INTO dailyRun (
+                id, started_at, completed_at, status, error_message,
+                newsletter_id, podcast_id, papers_ids
+            )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
@@ -158,8 +177,9 @@ def save_to_db(obj, table_name: str, db_path: str = "app.db"):
 
 
 def update_row_db(
-    col_name: str, new_value, id: str, table_name: str, db_path: str = "app.db"
+    col_name: str, new_value, row_id: str, table_name: str, db_path: str = "app.db"
 ):
+    """Update a single column for the row identified by row_id in table_name."""
     # Column/table names can't be passed as parameterized query params like values can,
     # so validate them against known columns before building the SQL string.
     allowed_columns = {
@@ -209,11 +229,11 @@ def update_row_db(
     if table_name == "papers":
         cursor.execute(
             f"UPDATE {table_name} SET {col_name} = ? WHERE arxiv_id = ?",
-            (new_value, id),
+            (new_value, row_id),
         )
     else:
         cursor.execute(
-            f"UPDATE {table_name} SET {col_name} = ? WHERE id = ?", (new_value, id)
+            f"UPDATE {table_name} SET {col_name} = ? WHERE id = ?", (new_value, row_id)
         )
 
     conn.commit()

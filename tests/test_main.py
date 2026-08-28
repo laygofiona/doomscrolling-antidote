@@ -1,11 +1,13 @@
-import os
+"""Smoke tests that verify external dependencies (arXiv, OpenAI, S3, config, .env) are reachable."""
+
 import json
+import os
 
 import pytest
 import arxiv
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
 from dotenv import load_dotenv
 
 from pipeline.models import Preferences
@@ -22,25 +24,25 @@ REQUIRED_ENV_KEYS = [
 ]
 
 
-# Test to check connection to arxiv
 def test_arxiv_connection():
+    """Check that the arXiv API is reachable and returns results."""
     search = arxiv.Search(query="cat:cs.AI", max_results=1)
     results = list(arxiv.Client().results(search))
     assert len(results) == 1
 
 
-# Test to check openai_api key credits
 def test_openai_api_key_credits():
+    """Check that the configured OpenAI API key is valid and has credits."""
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     try:
         response = client.models.list()
-    except Exception as e:
+    except OpenAIError as e:
         pytest.fail(f"OpenAI API key is invalid or has no available credits: {e}")
     assert len(response.data) > 0
 
 
-# Test to check S3 bucket
 def test_s3_bucket_connection():
+    """Check that the configured S3 bucket is reachable with current credentials."""
     bucket_name = os.getenv("BUCKET_NAME")
     assert bucket_name, "BUCKET_NAME is not set in the environment"
 
@@ -51,9 +53,9 @@ def test_s3_bucket_connection():
         pytest.fail(f"Could not connect to S3 bucket '{bucket_name}': {e}")
 
 
-# Test valid data values for configuration file
 def test_config_json_is_valid():
-    with open(CONFIG_PATH, "r") as f:
+    """Check that config.json parses into valid, internally-consistent Preferences."""
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         config_data = json.load(f)
 
     # will raise a validation error if any field is missing or the wrong type
@@ -66,8 +68,8 @@ def test_config_json_is_valid():
     assert preferences.papers_per_digest <= preferences.max_papers_fetched_per_category
 
 
-# Test if .env file is populated with appropriate keys
 def test_env_file_has_required_keys():
+    """Check that the .env file is populated with all required keys."""
     for key in REQUIRED_ENV_KEYS:
         value = os.getenv(key)
         assert value, f"Missing or empty required .env key: {key}"

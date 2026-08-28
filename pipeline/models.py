@@ -1,11 +1,18 @@
-from pydantic import BaseModel, field_validator, ValidationInfo
+"""Pydantic models and dataclasses shared across the pipeline and LLM agents."""
+
+# pylint: disable=too-few-public-methods
+
 import datetime
-from enum import Enum
-from typing import Optional, List
 from dataclasses import dataclass
+from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel, ValidationInfo, field_validator
 
 
 class StatusEnum(str, Enum):
+    """Lifecycle status of a daily pipeline run."""
+
     RUNNING = "running"
     SUCCESS = "success"
     PARTIAL = "partial"
@@ -13,6 +20,8 @@ class StatusEnum(str, Enum):
 
 
 class Preferences(BaseModel):
+    """User-configured preferences loaded from config.json."""
+
     arxiv_categories: list[str]
     keywords: list[str]
     email: str
@@ -26,7 +35,9 @@ class Preferences(BaseModel):
     tone: str
 
 
-class paper(BaseModel):
+class Paper(BaseModel):
+    """An arXiv paper, along with its AI-generated summary fields."""
+
     arxiv_id: str
     title: str
     authors: list[str]
@@ -41,7 +52,9 @@ class paper(BaseModel):
     fetched_at: datetime.datetime
 
 
-class newsletter(BaseModel):
+class Newsletter(BaseModel):
+    """A generated newsletter issue."""
+
     id: int
     title: str
     body_content: str
@@ -49,7 +62,9 @@ class newsletter(BaseModel):
     run_id: str
 
 
-class podcastEpisode(BaseModel):
+class PodcastEpisode(BaseModel):
+    """A generated podcast episode."""
+
     id: int
     title: str
     description: str
@@ -61,7 +76,9 @@ class podcastEpisode(BaseModel):
     run_id: str
 
 
-class dailyRun(BaseModel):
+class DailyRun(BaseModel):
+    """A single end-to-end run of the pipeline."""
+
     id: str
     started_at: datetime.datetime
     completed_at: Optional[datetime.datetime] = None
@@ -72,14 +89,15 @@ class dailyRun(BaseModel):
     papers_ids: Optional[list[str]] = None
 
 
-# For filter_papers() agent task
 class SelectedPaperIDs(BaseModel):
+    """Output schema for the filter_papers() agent task."""
+
     selected_ids: list[str]
 
-    # Ensure only appropriate number of paper IDs are selected by the agent
     @field_validator("selected_ids")
     @classmethod
     def validate_exact_count(cls, v: list[str], info: ValidationInfo) -> list[str]:
+        """Ensure only appropriate number of paper IDs are selected by the agent."""
         # PydanticAI automatically places the `deps` object into `info.context`
         deps = info.context if isinstance(info.context, dict) else {}
         expected_count = deps.get("papers_per_digest")
@@ -91,26 +109,32 @@ class SelectedPaperIDs(BaseModel):
         return v
 
 
-# For generating ai_summary and ai_why_relevant sections
 class PaperSummary(BaseModel):
+    """Output schema for generating ai_summary and ai_why_relevant sections."""
+
     ai_summary: str
     ai_why_relevant: str
 
 
-# For generating newsletter title and body
-class Newsletter_Content(BaseModel):
+class NewsletterContent(BaseModel):
+    """Output schema for generating newsletter title and body."""
+
     title: str
     body: str
 
 
 @dataclass
 class PapersContext:
+    """Agent dependency context carrying user preferences and paper data."""
+
     user_intention: str
     tone: str
     papers: list[dict]
 
 
-class Podcast_Episode_Content(BaseModel):
+class PodcastEpisodeContent(BaseModel):
+    """Output schema for generating podcast script, title, and description."""
+
     script_body: str
     podcast_title: str
     description: str
