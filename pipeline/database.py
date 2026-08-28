@@ -2,6 +2,7 @@ import sqlite3
 import json
 from enum import Enum
 
+
 def init_db(db_path: str = "app.db"):
     # Connects to file (creates app.db if it doesn't exist)
     conn = sqlite3.connect(db_path)
@@ -11,7 +12,8 @@ def init_db(db_path: str = "app.db"):
     conn.execute("PRAGMA journal_mode = WAL")
 
     # Create table for reddit posts, podcast episodes, newsletters, and daily runs
-    cursor.executescript("""
+    cursor.executescript(
+        """
         CREATE TABLE IF NOT EXISTS papers (
             arxiv_id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
@@ -57,10 +59,12 @@ def init_db(db_path: str = "app.db"):
             podcast_id INTEGER,
             papers_ids TEXT
         );
-    """)
-    
+    """
+    )
+
     conn.commit()
     conn.close()
+
 
 def save_to_db(obj, table_name: str, db_path: str = "app.db"):
     # Save an object to the specified table in the SQLite database
@@ -72,52 +76,128 @@ def save_to_db(obj, table_name: str, db_path: str = "app.db"):
     if table_name == "papers":
         # Use INSERT OR IGNORE since the same arxiv_id can appear more than once
         # in a single batch (e.g. matched under multiple keywords/categories)
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT OR IGNORE INTO papers (arxiv_id, title, authors, abstract, categories, primary_category, pdf_url, arxiv_url, updated_at, ai_summary, ai_why_relevant, fetched_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (obj.arxiv_id, obj.title, json.dumps(obj.authors), obj.abstract, json.dumps(obj.categories), obj.primary_category, obj.pdf_url, obj.arxiv_url, obj.updated_at.isoformat(), obj.ai_summary, obj.ai_why_relevant, obj.fetched_at.isoformat()))
-    
+        """,
+            (
+                obj.arxiv_id,
+                obj.title,
+                json.dumps(obj.authors),
+                obj.abstract,
+                json.dumps(obj.categories),
+                obj.primary_category,
+                obj.pdf_url,
+                obj.arxiv_url,
+                obj.updated_at.isoformat(),
+                obj.ai_summary,
+                obj.ai_why_relevant,
+                obj.fetched_at.isoformat(),
+            ),
+        )
+
     elif table_name == "podcastEpisode":
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO podcastEpisode (id, title, description, s3_url, duration_seconds, file_size_bytes, published_at, script, run_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (obj.id, obj.title, obj.description, obj.s3_url, obj.duration_seconds, obj.file_size_bytes, obj.published_at.isoformat() if obj.published_at else None, obj.script, obj.run_id))
+        """,
+            (
+                obj.id,
+                obj.title,
+                obj.description,
+                obj.s3_url,
+                obj.duration_seconds,
+                obj.file_size_bytes,
+                obj.published_at.isoformat() if obj.published_at else None,
+                obj.script,
+                obj.run_id,
+            ),
+        )
 
     elif table_name == "newsletter":
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO newsletter (id, title, body_content, sent_at, run_id)
             VALUES (?, ?, ?, ?, ?)
-        """, (obj.id, obj.title, obj.body_content, obj.sent_at.isoformat() if obj.sent_at else None, obj.run_id))
-    
+        """,
+            (
+                obj.id,
+                obj.title,
+                obj.body_content,
+                obj.sent_at.isoformat() if obj.sent_at else None,
+                obj.run_id,
+            ),
+        )
+
     elif table_name == "dailyRun":
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO dailyRun (id, started_at, completed_at, status, error_message, newsletter_id, podcast_id, papers_ids)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (obj.id, obj.started_at.isoformat(), obj.completed_at.isoformat() if obj.completed_at else None, obj.status.value if isinstance(obj.status, Enum) else str(obj.status), obj.error_message if hasattr(obj,'error_message') else None,
-                  obj.newsletter_id if hasattr(obj,'newsletter_id') else None,
-                  obj.podcast_id if hasattr(obj,'podcast_id') else None,
-                  json.dumps(obj.papers_ids) if getattr(obj, 'papers_ids', None) else None))
-    
+        """,
+            (
+                obj.id,
+                obj.started_at.isoformat(),
+                obj.completed_at.isoformat() if obj.completed_at else None,
+                obj.status.value if isinstance(obj.status, Enum) else str(obj.status),
+                obj.error_message if hasattr(obj, "error_message") else None,
+                obj.newsletter_id if hasattr(obj, "newsletter_id") else None,
+                obj.podcast_id if hasattr(obj, "podcast_id") else None,
+                (
+                    json.dumps(obj.papers_ids)
+                    if getattr(obj, "papers_ids", None)
+                    else None
+                ),
+            ),
+        )
+
     conn.commit()
     conn.close()
-    
-def update_row_db(col_name: str, new_value, id: str, table_name: str, db_path: str = "app.db"):
+
+
+def update_row_db(
+    col_name: str, new_value, id: str, table_name: str, db_path: str = "app.db"
+):
     # Column/table names can't be passed as parameterized query params like values can,
     # so validate them against known columns before building the SQL string.
     allowed_columns = {
         "papers": {
-            "title", "authors", "abstract", "categories", "primary_category",
-            "pdf_url", "arxiv_url", "updated_at", "ai_summary", "ai_why_relevant", "fetched_at",
+            "title",
+            "authors",
+            "abstract",
+            "categories",
+            "primary_category",
+            "pdf_url",
+            "arxiv_url",
+            "updated_at",
+            "ai_summary",
+            "ai_why_relevant",
+            "fetched_at",
         },
-        "newsletter": {
-            "id", "title", "body_content", "sent_at", "run_id"
-        },
+        "newsletter": {"id", "title", "body_content", "sent_at", "run_id"},
         "podcastEpisode": {
-            "id", "title", "description", "s3_url", "duration_seconds", "file_size_bytes", "published_at", "script", "run_id"
+            "id",
+            "title",
+            "description",
+            "s3_url",
+            "duration_seconds",
+            "file_size_bytes",
+            "published_at",
+            "script",
+            "run_id",
         },
         "dailyRun": {
-            "id", "started_at", "completed_at", "status", "error_message", "newsletter_id", "podcast_id", "papers_ids"
-        }
+            "id",
+            "started_at",
+            "completed_at",
+            "status",
+            "error_message",
+            "newsletter_id",
+            "podcast_id",
+            "papers_ids",
+        },
     }
     if table_name not in allowed_columns or col_name not in allowed_columns[table_name]:
         raise ValueError(f"Cannot update column '{col_name}' on table '{table_name}'")
@@ -129,14 +209,12 @@ def update_row_db(col_name: str, new_value, id: str, table_name: str, db_path: s
     if table_name == "papers":
         cursor.execute(
             f"UPDATE {table_name} SET {col_name} = ? WHERE arxiv_id = ?",
-            (new_value, id)
+            (new_value, id),
         )
     else:
         cursor.execute(
-            f"UPDATE {table_name} SET {col_name} = ? WHERE id = ?",
-            (new_value, id)
+            f"UPDATE {table_name} SET {col_name} = ? WHERE id = ?", (new_value, id)
         )
-        
 
     conn.commit()
     conn.close()
