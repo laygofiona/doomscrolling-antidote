@@ -580,14 +580,7 @@ def _build_feed_generator(cover_image_url):
     fg.language(PODCAST_LANGUAGE)
     fg.generator("python-feedgen")
     fg.lastBuildDate(datetime.datetime.now(datetime.timezone.utc))
-    fg.podcast.itunes_author(PODCAST_AUTHOR)
-    if PODCAST_OWNER_EMAIL:
-        fg.podcast.itunes_owner(name=PODCAST_AUTHOR, email=PODCAST_OWNER_EMAIL)
-    fg.podcast.itunes_category(PODCAST_CATEGORY)
-    fg.podcast.itunes_explicit(PODCAST_EXPLICIT)
-    fg.podcast.itunes_type("episodic")
     if cover_image_url:
-        fg.podcast.itunes_image(cover_image_url)
         fg.image(url=cover_image_url, title=PODCAST_TITLE, link=PODCAST_WEBSITE_URL)
     return fg
 
