@@ -696,7 +696,7 @@ def main():
     # initialize database
     init_db()
     preferences = read_config_json(
-        "/Users/fionalaygo/Desktop/doomscrolling-alt/doomscrolling-antidote/config.json"
+        "config.json"
     )
 
     logging.info("Executing fetch_papers()...")
@@ -736,7 +736,6 @@ def main():
     )
 
     logging.info("Sending newsletter...")
-    dailyrun_id = "20260826123211_5a80"
     # use existing newsletter tempalte for html, deterministc
     newsletter_html = generate_newsletter_html(dailyrun_id)
     newsletter_id = get_id(id_type="newsletter", dailyrun_id=dailyrun_id)

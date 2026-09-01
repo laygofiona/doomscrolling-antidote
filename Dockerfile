@@ -14,12 +14,8 @@ WORKDIR /code
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# copy source code
+# copy source code along with ./crontab file
 COPY . .
-
-# create crontab file
-# 0 7 * * * means: 0th minute, 7th hour (7:00 AM), every day, month, and day of week
-RUN echo "0 7 * * * python -m pipeline.main" > /code/crontab
 
 EXPOSE 8000
 
