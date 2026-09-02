@@ -111,19 +111,24 @@ def fetch_papers(categories, keywords, limit):
     # fetch papers at limit
     if not categories and not keywords:
         raise ValueError("At least one category or keyword must be specified.")
+    
+    # initialize arxiv client
+    client = arxiv.Client()
 
     # get the latest max 5 papers from each category
     papers_arr = []
     for category in categories:
         try:
+            # define search criteria: filter by category, sort by submission date
             search = arxiv.Search(
                 query=f"cat:{category}",
                 max_results=limit,
                 sort_by=arxiv.SortCriterion.SubmittedDate,
             )
 
-            for res in arxiv.Client().results(search):
-                # create paper object, use local time for datetime
+            # execute API request and iterate through result generator
+            for res in client.results(search):
+                # create Paper object (res.updated is in UTC, fetched_at is local time)
                 paper_to_add = Paper(
                     arxiv_id=res.get_short_id(),
                     title=res.title,
@@ -138,11 +143,11 @@ def fetch_papers(categories, keywords, limit):
                 )
                 papers_arr.append(paper_to_add)
 
-            time.sleep(WAIT_TIME)  # Wait to avoid hitting the API rate limit
+            time.sleep(WAIT_TIME)  # wait to avoid hitting the API rate limit
         except Exception as e:  # pylint: disable=broad-exception-caught
-            # arxiv's client can fail in library-specific ways (HTTP, parsing, rate
-            # limiting); log and continue with the next category rather than abort.
+            # log and continue with the next category rather than abort
             logging.error("Exception on fetch_papers(): %s", e)
+    # return list of Paper objects (not yet filtered by keywords or user intention)
     return papers_arr
 
 
