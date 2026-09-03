@@ -652,7 +652,9 @@ def _add_episode_entries(fg, episodes, cover_image_url):
         # tag for podcast clients to download + play
         fe.enclosure(ep["s3_url"], str(ep["file_size_bytes"] or 0), "audio/mpeg")
 
-        # converts the published_at string to a datetime object, and ensures it has a timezone (UTC if missing)
+        # converts the published_at string 
+        # to a datetime object, and ensures 
+        # it has a timezone (UTC if missing)
         published_dt = datetime.datetime.fromisoformat(ep["published_at"])
         if published_dt.tzinfo is None:
             published_dt = published_dt.replace(tzinfo=datetime.timezone.utc)
