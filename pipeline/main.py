@@ -111,7 +111,7 @@ def fetch_papers(categories, keywords, limit):
     # fetch papers at limit
     if not categories and not keywords:
         raise ValueError("At least one category or keyword must be specified.")
-    
+
     # initialize arxiv client
     client = arxiv.Client()
 
@@ -236,7 +236,7 @@ def generate_newsletter_html(dailyrun_id):
         # define the directory where the templates are located
         loader=FileSystemLoader(TEMPLATES_DIR),
         # convert <, >, & to HTML entities in template output (for security)
-        # enable autoescaping for .html files 
+        # enable autoescaping for .html files
         autoescape=select_autoescape(["html"]),
     )
     template = env.get_template("newsletter.html")
@@ -279,7 +279,9 @@ def email_newsletter(newsletter_html, sender_email, receiver_email, newsletter_i
         )
 
     except (smtplib.SMTPException, OSError, sqlite3.Error) as e:
-        logging.error("Exception on email_newsletter(): Failed to send email. Error: %s", e)
+        logging.error(
+            "Exception on email_newsletter(): Failed to send email. Error: %s", e
+        )
 
 
 def build_podcast_episode(podcast_id):
@@ -294,7 +296,8 @@ def build_podcast_episode(podcast_id):
         podcast_row = cursor.fetchone()
     except sqlite3.Error as e:
         logging.error(
-            "Exception on build_podcast_episode(): Failed to fetch podcastEpisode row: %s", e
+            "Exception on build_podcast_episode(): Failed to fetch podcastEpisode row: %s",
+            e,
         )
         return None
     finally:
@@ -345,10 +348,14 @@ def build_podcast_episode(podcast_id):
     except Exception as e:  # pylint: disable=broad-exception-caught
         # edge-tts calls an external TTS service
         # treat any failure as a skip-and-log
-        logging.error("Exception on build_podcast_episode(): Failed to generate audio: %s", e)
+        logging.error(
+            "Exception on build_podcast_episode(): Failed to generate audio: %s", e
+        )
         return None
 
-    # write ID3 tags (podcast title, episode title, author name) so podcast feed validators can read episode metadata
+    # write ID3 tags
+    # (podcast title, episode title, author name)
+    # so podcast feed validators can read episode metadata
     _tag_podcast_audio(output_path, podcast_row["title"])
 
     # update values for duration_seconds, file_size_bytes for podcastEpisode row in table
@@ -410,8 +417,11 @@ def _ensure_public_bucket(s3):
             else:
                 raise
 
-    # reapply public bucket access settings to ensure public-read access is enabled, even if the bucket already existed
-    # allows files to be shared publicly, allows bucket to apply public policies
+    # reapply public bucket access settings
+    # to ensure public-read access is enabled,
+    # even if the bucket already existed
+    # allows files to be shared publicly,
+    # allows bucket to apply public policies
     try:
         s3.put_public_access_block(
             Bucket=BUCKET_NAME,
@@ -426,7 +436,7 @@ def _ensure_public_bucket(s3):
         logging.warning("put_public_access_block failed for %s: %s", BUCKET_NAME, e)
 
     # apply Public Read Policy
-    # attaches a JSON access policy granting READ/download access to all objects in the bucket 
+    # attaches a JSON access policy granting READ/download access to all objects in the bucket
     public_read_policy = {
         "Version": "2012-10-17",
         "Statement": [
@@ -452,7 +462,9 @@ def upload_podcast_episode(podcast_ep_path):
     try:
         _ensure_public_bucket(s3)
     except ClientError as e:
-        logging.error("Exception on upload_podcast_episode(): Failed to create bucket: %s", e)
+        logging.error(
+            "Exception on upload_podcast_episode(): Failed to create bucket: %s", e
+        )
         return None
 
     # Upload the file under a stable key
@@ -466,7 +478,9 @@ def upload_podcast_episode(podcast_ep_path):
             ExtraArgs={"ContentType": "audio/mpeg"},
         )
     except (ClientError, S3UploadFailedError, OSError) as e:
-        logging.error("Exception on upload_podcast_episode(): Failed to upload file: %s", e)
+        logging.error(
+            "Exception on upload_podcast_episode(): Failed to upload file: %s", e
+        )
         return None
 
     # build URL
@@ -483,7 +497,9 @@ def upload_podcast_episode(podcast_ep_path):
             )
             return None
     except requests.exceptions.RequestException as e:
-        logging.error("Exception on upload_podcast_episode(): Failed to verify URL: %s", e)
+        logging.error(
+            "Exception on upload_podcast_episode(): Failed to verify URL: %s", e
+        )
         return None
 
     return url
@@ -521,14 +537,19 @@ def _upload_podcast_website(s3, cover_image_url):
         )
     except ClientError as e:
         logging.error(
-            "Exception on _upload_podcast_website(): Failed to upload website page: %s", e
+            "Exception on _upload_podcast_website(): Failed to upload website page: %s",
+            e,
         )
 
 
 def _add_podcast_namespace(feed_path, feed_url):
-    # feedgen's "podcast" extension only implements the itunes namespace/tags it has, it doesn't have support for Podcasting 2.0's "podcast" namespace, so we patch it in manually
+    # feedgen's "podcast" extension only implements
+    # the itunes namespace/tags it has,
+    # it doesn't have support for
+    # Podcasting 2.0's "podcast" namespace,
+    # so we patch it in manually
     # patch support for separate Podcasting 2.0 "podcast" namespace
-    
+
     # load entire RSS XML file into memory
     with open(feed_path, "r", encoding="utf-8") as f:
         xml_content = f.read()
@@ -542,7 +563,8 @@ def _add_podcast_namespace(feed_path, feed_url):
         )
 
     if "<podcast:guid>" not in xml_content:
-        # adding a <podcast:guid> tag to the <channel> element is required by Podcasting 2.0 validators
+        # adding a <podcast:guid> tag to the <channel> element
+        # is required by Podcasting 2.0 validators
         # remove chars before :// and a trailing slash
         protocol_less_url = re.sub(r"^[a-zA-Z]+://", "", feed_url).rstrip("/")
         podcast_guid = str(uuid.uuid5(PODCAST_NAMESPACE_GUID_SEED, protocol_less_url))
@@ -568,7 +590,9 @@ def _upload_cover_image(s3):
         )
         return f"https://{BUCKET_NAME}.s3.{REGION}.amazonaws.com/{COVER_IMAGE_S3_KEY}"
     except (ClientError, S3UploadFailedError, OSError) as e:
-        logging.error("Exception on regenerate_rss_feed(): Failed to upload cover image: %s", e)
+        logging.error(
+            "Exception on regenerate_rss_feed(): Failed to upload cover image: %s", e
+        )
         return None
 
 
@@ -577,7 +601,8 @@ def _get_published_episodes():
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        # gets all podcastEpisode rows with a non-null s3_url and published_at, ordered by published_at descending
+        # gets all podcastEpisode rows with a non-null s3_url
+        # and published_at, ordered by published_at descending
         cursor.execute(
             "SELECT * FROM podcastEpisode WHERE s3_url IS NOT NULL "
             "AND published_at IS NOT NULL ORDER BY published_at DESC"
@@ -585,12 +610,14 @@ def _get_published_episodes():
         return cursor.fetchall()
     except sqlite3.Error as e:
         logging.error(
-            "Exception on regenerate_rss_feed(): Failed to read podcastEpisode rows: %s", e
+            "Exception on regenerate_rss_feed(): Failed to read podcastEpisode rows: %s",
+            e,
         )
         return None
     finally:
         if conn is not None:
             conn.close()
+
 
 # Build the RSS feed XML with iTunes tags and Podcasting 2.0 namespace
 # add metadata to the feed object
@@ -611,6 +638,7 @@ def _build_feed_generator(cover_image_url):
         fg.image(url=cover_image_url, title=PODCAST_TITLE, link=PODCAST_WEBSITE_URL)
     return fg
 
+
 # Add each episode to the feed object as an entry, with iTunes tags and enclosure for the MP3 file
 def _add_episode_entries(fg, episodes, cover_image_url):
     for ep in episodes:
@@ -619,7 +647,9 @@ def _add_episode_entries(fg, episodes, cover_image_url):
         fe.title(ep["title"])
         fe.description(ep["description"])
         fe.link(href=ep["s3_url"])
-        # stores the MP3 file's URL, size, and MIME type in the <enclosure> tag for podcast clients to download + play
+        # stores the MP3 file's URL, size,
+        # and MIME type in the <enclosure>
+        # tag for podcast clients to download + play
         fe.enclosure(ep["s3_url"], str(ep["file_size_bytes"] or 0), "audio/mpeg")
 
         # converts the published_at string to a datetime object, and ensures it has a timezone (UTC if missing)
@@ -643,13 +673,15 @@ def regenerate_rss_feed():
         # create the bucket if DNE
         _ensure_public_bucket(s3)
     except ClientError as e:
-        logging.error("Exception on regenerate_rss_feed(): Failed to create bucket: %s", e)
+        logging.error(
+            "Exception on regenerate_rss_feed(): Failed to create bucket: %s", e
+        )
         return None
 
     # adds cover image to bucket
     cover_image_url = _upload_cover_image(s3)
 
-    # channel <link> must resolve to a real webpage, not the feed XML itself 
+    # channel <link> must resolve to a real webpage, not the feed XML itself
     # so we add a simple HTML page with the podcast title, description, and cover image
     _upload_podcast_website(s3, cover_image_url)
 
@@ -663,9 +695,8 @@ def regenerate_rss_feed():
     _add_episode_entries(fg, episodes, cover_image_url)
 
     # save to a .xml file in /temp folder
-    #TODO: remove later
     temp_path = os.path.join(tempfile.gettempdir(), "research_digest_podcast")
-    print("Temp path for RSS feed:", temp_path)
+    logging.info("Temp path for RSS feed: %s", temp_path)
     if not os.path.isdir(temp_path):
         os.mkdir(temp_path)
     feed_path = os.path.join(temp_path, "feed.xml")
@@ -673,7 +704,9 @@ def regenerate_rss_feed():
         # writes the RSS feed XML to a file at feed_path, with pretty formatting
         fg.rss_file(feed_path, pretty=True)
     except OSError as e:
-        logging.error("Exception on regenerate_rss_feed(): Failed to write RSS XML file: %s", e)
+        logging.error(
+            "Exception on regenerate_rss_feed(): Failed to write RSS XML file: %s", e
+        )
         return None
 
     # feedgen has no support for the Podcasting 2.0 "podcast" namespace, so patch it in
@@ -702,7 +735,9 @@ def upload_rss_to_s3(feed_path):
             ExtraArgs={"ContentType": "application/rss+xml"},
         )
     except (ClientError, S3UploadFailedError, OSError) as e:
-        logging.error("Exception on upload_rss_to_s3(): Failed to upload RSS feed: %s", e)
+        logging.error(
+            "Exception on upload_rss_to_s3(): Failed to upload RSS feed: %s", e
+        )
         return None
 
     # check if url request is 200
@@ -727,9 +762,7 @@ def main():
     # initialize database
     init_db()
     # get user preferences from config.json
-    preferences = read_config_json(
-        "config.json"
-    )
+    preferences = read_config_json("config.json")
 
     logging.info("Executing fetch_papers()...")
     # Get latest arXiv papers + their details from today, per config.json's categories/keywords
