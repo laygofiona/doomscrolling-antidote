@@ -10,11 +10,3 @@ services:
       - .aws/config
       - .aws/credentials
 
-  db:
-    image: keinos/sqlite3:latest
-    working_dir: /code
-    volumes:
-      - .:/code
-    stdin_open: true
-    tty: true
-    entrypoint: ["tail", "-f", "/dev/null"]

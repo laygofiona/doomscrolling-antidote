@@ -1,8 +1,6 @@
 """Shared lookup helpers used by both the pipeline and the LLM agents."""
 
 # pylint: disable=duplicate-code
-# The connect/cursor/log-and-bail boilerplate below is intentionally repeated in
-# llm/agents.py rather than hidden behind another layer of indirection.
 
 import json
 import logging
@@ -59,9 +57,9 @@ def get_papers(dailyrun_id):
     if conn is not None:
         conn.close()
 
-    # Prepare paper data (works for both Pydantic models and sqlite3.Row)
+    # Prepare paper data p is a sqlite3.Row object, convert it to a dict for JSON serialization
     formatted_papers = [
-        p.model_dump() if hasattr(p, "model_dump") else dict(p)
+        dict(p)
         for p in papers_processed
     ]
 

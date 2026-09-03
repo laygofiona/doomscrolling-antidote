@@ -15,7 +15,7 @@ you care about, and every day it will:
 The goal is to replace mindless scrolling with a focused, daily habit of
 reading and listening to research in the fields you actually want to learn.
 
-This is a single-tenant, self-hosted app. It is designed for one user running it on their own machine via Docker. User preferences are saved in a config.json file.
+This is a single-tenant, self-hosted app. It is designed for one user running it on their own machine via Docker. User preferences are saved in a config.json file. 
 
 ## How It Works
 
@@ -32,7 +32,7 @@ flowchart TD
     end
 
     subgraph Gen["Summarize & Write"]
-        DB2 --> PDF["extract_pdf_text_from_url()<br/>pypdf"]
+        DB2 --> PDF["_extract_pdf_text_from_url()<br/>pypdf"]
         PDF --> Summarize["summarize_papers()<br/>Pydantic AI + OpenAI"]
         Summarize --> News["generate_newsletter_content()<br/>Pydantic AI + OpenAI"]
         Summarize --> Script["generate_podcast_script()<br/>Pydantic AI + OpenAI"]
