@@ -1,2 +1,2 @@
-# Run a script every day at 8am and redirect output to Docker logs
+# Run a script every day at 8am and redirect subprocess' output to Docker logs
 0 8 * * * python -m pipeline.main >> /proc/1/fd/1 2>&1

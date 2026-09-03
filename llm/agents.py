@@ -1,8 +1,7 @@
 """LLM agent tasks: filtering, summarizing, and generating newsletter/podcast content."""
 
 # pylint: disable=duplicate-code
-# The connect/cursor/log-and-bail boilerplate below is intentionally repeated in
-# pipeline/utils.py rather than hidden behind another layer of indirection.
+
 
 import io
 import json
@@ -42,13 +41,14 @@ configure_logging()
 WAIT_SECONDS = 5
 
 
-def extract_pdf_text_from_url(url: str) -> str:
+def _extract_pdf_text_from_url(url: str) -> str:
     """Download a PDF from url and return its concatenated page text."""
-    # fetch PDF content over HTTP
+    # fetch raw PDF content in bytes over HTTP
     response = requests.get(url, timeout=30)
+    # checks for the response code and errors out if 4xx/5xx
     response.raise_for_status()
 
-    # wrap bytes in io.BytesIO and pass to PdfReader
+    # wraps bytes in a binary stream so PdfReader can read it as a file-like object
     pdf_file = io.BytesIO(response.content)
     reader = PdfReader(pdf_file)
 
@@ -56,7 +56,7 @@ def extract_pdf_text_from_url(url: str) -> str:
     return "\n".join([page.extract_text() or "" for page in reader.pages])
 
 
-def generate_time_id(random_length=4) -> str:
+def _generate_time_id(random_length=4) -> str:
     """Build a sortable ID from the current timestamp plus a random hex suffix."""
     # Timestamp down to seconds
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -102,6 +102,8 @@ def _get_new_papers(papers):
 
 def _filter_by_keywords(papers, keywords):
     """Keep only papers whose abstract matches at least one keyword."""
+    # convert keywords to a regex pattern that matches whole words, case-insensitive
+    # e.g: r"\b(python|c\+\+|data\ science)\b"
     pattern = r"\b(" + "|".join(map(re.escape, keywords)) + r")\b"
     matched_papers = []
 
@@ -123,8 +125,10 @@ def _filter_by_keywords(papers, keywords):
 
 
 def _select_top_papers(papers, papers_per_digest, user_intention, keywords):
-    """Rank papers by relevance to user_intention and return the top N with their IDs."""
+    """Rank papers by relevance to user_intention and return the top N with their IDs (arxiv_id)."""
+    # structured LLM call with judgement on relevance to user intention and keywords
     if len(papers) <= papers_per_digest:
+        # automatically returns papers and their IDs if there are fewer than the requested number
         return papers, [p.arxiv_id for p in papers]
 
     try:
@@ -153,6 +157,7 @@ def _select_top_papers(papers, papers_per_digest, user_intention, keywords):
     try:
         time.sleep(WAIT_SECONDS)
         # pass context so Pydantic's validator knows the dynamic limit
+        # execute agent loop
         result = agent.run_sync(
             f"User Query: {user_prompt}\n\n"
             f"Candidate Papers:\n{[p.model_dump() for p in papers]}",
@@ -178,18 +183,21 @@ def _save_filtered_run(papers, selected_ids):
         except sqlite3.Error as e:
             logging.error("Exception on filter_papers(): Saving layer3_papers to DB: %s", e)
 
-    dailyrun_id = generate_time_id()
+    dailyrun_id = _generate_time_id()
     try:
+        # create a new dailyRun row with the selected paper IDs
         daily_run = DailyRun(
             id=dailyrun_id,
             started_at=datetime.now(),
             status=StatusEnum.RUNNING,
             papers_ids=selected_ids,
         )
+        # save the dailyRun row to the database dailyRun table
         save_to_db(daily_run, "dailyRun")
     except sqlite3.Error as e:
-        logging.error("Exception on filter_papers(): Crating daily_run row: %s", e)
+        logging.error("Exception on filter_papers(): Creating daily_run row: %s", e)
 
+    # return the dailyrun_id so it can be used for subsequent steps in the pipeline
     return dailyrun_id
 
 
@@ -199,16 +207,22 @@ class LLMClient:
     @staticmethod
     def filter_papers(papers, keywords, papers_per_digest, user_intention):
         """Filter papers down to the top papers_per_digest relevant to user_intention."""
+        # get new papers not already in the database
         new_papers = _get_new_papers(papers)
+        # filter new papers by keywords in abstract
         matched_papers = _filter_by_keywords(new_papers, keywords)
+        # only select the top papers_per_digest most relevant to user_intention
+        # uses an LLM agent to rank papers and return the top N with their IDs (arxiv_id)
         top_papers, selected_ids = _select_top_papers(
             matched_papers, papers_per_digest, user_intention, keywords
         )
+        # return dailyRun ID after saving the selected papers and creating the dailyRun row
         return _save_filtered_run(top_papers, selected_ids)
 
     @staticmethod
     def summarize_papers(user_intention, tone):
         """Summarize today's papers, writing ai_summary/ai_why_relevant back to the DB."""
+        # simple LLM call
         # Get all paper rows that were fetched today
         papers_list: list[Paper] = []
 
@@ -263,7 +277,7 @@ class LLMClient:
         for paper_row in papers_list:
             try:
                 # Must read entire paper first
-                pdf_text = extract_pdf_text_from_url(paper_row["pdf_url"])
+                pdf_text = _extract_pdf_text_from_url(paper_row["pdf_url"])
 
                 # Summarize the paper using OpenAI API via Pydantic AI
                 # LLM writes short summary per selected paper, saves to ai_summary column
@@ -314,6 +328,7 @@ class LLMClient:
     @staticmethod
     def generate_newsletter_content(dailyrun_id, tone, user_intention):
         """Generate the newsletter title/intro body and save it to the newsletter table."""
+        # simple LLM call
         # get papers associated with dailyrun_id
         formatted_papers = get_papers(dailyrun_id)
         deps = PapersContext(
@@ -393,6 +408,7 @@ class LLMClient:
     @staticmethod
     def generate_podcast_script(dailyrun_id, tone, user_intention):
         """Generate the podcast script/title/description and save it to the DB."""
+        # simple LLM call
         # Generate podcast script using OpenAI API via Pydantic AI
         # LLM writes podcast script based on the summaries of the papers, saves to
         # podcast_script column.

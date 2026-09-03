@@ -112,18 +112,23 @@ def fetch_papers(categories, keywords, limit):
     if not categories and not keywords:
         raise ValueError("At least one category or keyword must be specified.")
 
+    # initialize arxiv client
+    client = arxiv.Client()
+
     # get the latest max 5 papers from each category
     papers_arr = []
     for category in categories:
         try:
+            # define search criteria: filter by category, sort by submission date
             search = arxiv.Search(
                 query=f"cat:{category}",
                 max_results=limit,
                 sort_by=arxiv.SortCriterion.SubmittedDate,
             )
 
-            for res in arxiv.Client().results(search):
-                # create paper object, use local time for datetime
+            # execute API request and iterate through result generator
+            for res in client.results(search):
+                # create Paper object (res.updated is in UTC, fetched_at is local time)
                 paper_to_add = Paper(
                     arxiv_id=res.get_short_id(),
                     title=res.title,
@@ -138,17 +143,18 @@ def fetch_papers(categories, keywords, limit):
                 )
                 papers_arr.append(paper_to_add)
 
-            time.sleep(WAIT_TIME)  # Wait to avoid hitting the API rate limit
+            time.sleep(WAIT_TIME)  # wait to avoid hitting the API rate limit
         except Exception as e:  # pylint: disable=broad-exception-caught
-            # arxiv's client can fail in library-specific ways (HTTP, parsing, rate
-            # limiting); log and continue with the next category rather than abort.
+            # log and continue with the next category rather than abort
             logging.error("Exception on fetch_papers(): %s", e)
+    # return list of Paper objects (not yet filtered by keywords or user intention)
     return papers_arr
 
 
 def generate_newsletter_html(dailyrun_id):
     """Render the newsletter HTML for a given dailyrun_id."""
     # Get the papers associated with dailyrun_id
+    # returns a list of dicts, each dict representing a paper with keys matching the Paper model
     papers_processed = get_papers(dailyrun_id=dailyrun_id)
 
     # Decode the JSON-string authors/categories columns into lists for the template
@@ -225,8 +231,12 @@ def generate_newsletter_html(dailyrun_id):
         conn.close()
 
     # Jinja2 template renders HTML from paper summaries
+    # holds templating settings
     env = Environment(
+        # define the directory where the templates are located
         loader=FileSystemLoader(TEMPLATES_DIR),
+        # convert <, >, & to HTML entities in template output (for security)
+        # enable autoescaping for .html files
         autoescape=select_autoescape(["html"]),
     )
     template = env.get_template("newsletter.html")
@@ -239,6 +249,7 @@ def email_newsletter(newsletter_html, sender_email, receiver_email, newsletter_i
     """Send the newsletter HTML via SMTP and record the send time."""
     # construct email message and details
     now = datetime.datetime.now()
+    # creates an email-mesage object from the built-in email package
     msg = EmailMessage()
     msg["Subject"] = f'Research Digest - Issue {now.strftime("%A, %B %d, %Y")}'
     msg["From"] = sender_email
@@ -249,6 +260,7 @@ def email_newsletter(newsletter_html, sender_email, receiver_email, newsletter_i
         "Here is your daily update! (Please enable HTML to view this email properly)"
     )
 
+    # ensures html version is rendered
     msg.add_alternative(newsletter_html, subtype="html")
 
     # establish a secure connection and send the email
@@ -267,7 +279,9 @@ def email_newsletter(newsletter_html, sender_email, receiver_email, newsletter_i
         )
 
     except (smtplib.SMTPException, OSError, sqlite3.Error) as e:
-        logging.error("Exception on email_newsletter(): Failed to send email. Error: %s", e)
+        logging.error(
+            "Exception on email_newsletter(): Failed to send email. Error: %s", e
+        )
 
 
 def build_podcast_episode(podcast_id):
@@ -282,7 +296,8 @@ def build_podcast_episode(podcast_id):
         podcast_row = cursor.fetchone()
     except sqlite3.Error as e:
         logging.error(
-            "Exception on build_podcast_episode(): Failed to fetch podcastEpisode row: %s", e
+            "Exception on build_podcast_episode(): Failed to fetch podcastEpisode row: %s",
+            e,
         )
         return None
     finally:
@@ -331,11 +346,16 @@ def build_podcast_episode(podcast_id):
             )
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
-        # edge-tts calls an external TTS service; treat any failure as a skip-and-log.
-        logging.error("Exception on build_podcast_episode(): Failed to generate audio: %s", e)
+        # edge-tts calls an external TTS service
+        # treat any failure as a skip-and-log
+        logging.error(
+            "Exception on build_podcast_episode(): Failed to generate audio: %s", e
+        )
         return None
 
-    # write ID3 tags (title/artist/album) so podcast feed validators can read episode metadata
+    # write ID3 tags
+    # (podcast title, episode title, author name)
+    # so podcast feed validators can read episode metadata
     _tag_podcast_audio(output_path, podcast_row["title"])
 
     # update values for duration_seconds, file_size_bytes for podcastEpisode row in table
@@ -397,9 +417,11 @@ def _ensure_public_bucket(s3):
             else:
                 raise
 
-    # Best-effort: (re-)apply public access settings even on an existing
-    # bucket, since a prior run may have failed to apply them. A permission
-    # error here shouldn't block uploads to a bucket that's already public.
+    # reapply public bucket access settings
+    # to ensure public-read access is enabled,
+    # even if the bucket already existed
+    # allows files to be shared publicly,
+    # allows bucket to apply public policies
     try:
         s3.put_public_access_block(
             Bucket=BUCKET_NAME,
@@ -413,7 +435,8 @@ def _ensure_public_bucket(s3):
     except ClientError as e:
         logging.warning("put_public_access_block failed for %s: %s", BUCKET_NAME, e)
 
-    # Apply Public Read Policy
+    # apply Public Read Policy
+    # attaches a JSON access policy granting READ/download access to all objects in the bucket
     public_read_policy = {
         "Version": "2012-10-17",
         "Statement": [
@@ -439,10 +462,13 @@ def upload_podcast_episode(podcast_ep_path):
     try:
         _ensure_public_bucket(s3)
     except ClientError as e:
-        logging.error("Exception on upload_podcast_episode(): Failed to create bucket: %s", e)
+        logging.error(
+            "Exception on upload_podcast_episode(): Failed to create bucket: %s", e
+        )
         return None
 
     # Upload the file under a stable key
+    # set destination path inside bucket
     s3_key = f"podcasts/{os.path.basename(podcast_ep_path)}"
     try:
         s3.upload_file(
@@ -452,7 +478,9 @@ def upload_podcast_episode(podcast_ep_path):
             ExtraArgs={"ContentType": "audio/mpeg"},
         )
     except (ClientError, S3UploadFailedError, OSError) as e:
-        logging.error("Exception on upload_podcast_episode(): Failed to upload file: %s", e)
+        logging.error(
+            "Exception on upload_podcast_episode(): Failed to upload file: %s", e
+        )
         return None
 
     # build URL
@@ -467,35 +495,39 @@ def upload_podcast_episode(podcast_ep_path):
                 res.status_code,
                 url,
             )
+            return None
     except requests.exceptions.RequestException as e:
-        logging.error("Exception on upload_podcast_episode(): Failed to verify URL: %s", e)
+        logging.error(
+            "Exception on upload_podcast_episode(): Failed to verify URL: %s", e
+        )
+        return None
 
-    # return url
     return url
 
 
 def _upload_podcast_website(s3, cover_image_url):
-    # Podcast feed validators check that the channel's <link> resolves to an actual
-    # webpage; without this, that <link> would have to point at the feed XML itself.
+    # podcast feed validators check that the channel's <link> resolves to an actual webpage
+    # upload a simple HTML page with the podcast title, description, and cover image
     cover_img_html = (
         f'<img src="{cover_image_url}" alt="{PODCAST_TITLE} cover art" width="300">'
         if cover_image_url
         else ""
     )
-    website_html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>{PODCAST_TITLE}</title>
-<meta name="description" content="{PODCAST_DESCRIPTION}">
-</head>
-<body>
-<h1>{PODCAST_TITLE}</h1>
-<p>{PODCAST_DESCRIPTION}</p>
-{cover_img_html}
-<p><a href="{RSS_FEED_URL}">Subscribe via RSS</a></p>
-</body>
-</html>"""
+    website_html = f"""
+        <!DOCTYPE html>
+        <html lang="en">
+            <head>
+                <meta charset="utf-8">
+                <title>{PODCAST_TITLE}</title>
+                <meta name="description" content="{PODCAST_DESCRIPTION}">
+            </head>
+            <body>
+                <h1>{PODCAST_TITLE}</h1>
+                <p>{PODCAST_DESCRIPTION}</p>
+                {cover_img_html}
+                <p><a href="{RSS_FEED_URL}">Subscribe via RSS</a></p>
+            </body>
+        </html>"""
     try:
         s3.put_object(
             Bucket=BUCKET_NAME,
@@ -505,17 +537,25 @@ def _upload_podcast_website(s3, cover_image_url):
         )
     except ClientError as e:
         logging.error(
-            "Exception on _upload_podcast_website(): Failed to upload website page: %s", e
+            "Exception on _upload_podcast_website(): Failed to upload website page: %s",
+            e,
         )
 
 
 def _add_podcast_namespace(feed_path, feed_url):
-    # feedgen's "podcast" extension only implements the itunes namespace/tags; it has
-    # no support for the separate Podcasting 2.0 "podcast" namespace, so patch it in.
+    # feedgen's "podcast" extension only implements
+    # the itunes namespace/tags it has,
+    # it doesn't have support for
+    # Podcasting 2.0's "podcast" namespace,
+    # so we patch it in manually
+    # patch support for separate Podcasting 2.0 "podcast" namespace
+
+    # load entire RSS XML file into memory
     with open(feed_path, "r", encoding="utf-8") as f:
         xml_content = f.read()
 
     if "xmlns:podcast=" not in xml_content:
+        # add podcast namespace declaration to <rss> tag
         xml_content = xml_content.replace(
             "<rss ",
             f'<rss xmlns:podcast="{PODCAST_NAMESPACE_XMLNS}" ',
@@ -523,6 +563,9 @@ def _add_podcast_namespace(feed_path, feed_url):
         )
 
     if "<podcast:guid>" not in xml_content:
+        # adding a <podcast:guid> tag to the <channel> element
+        # is required by Podcasting 2.0 validators
+        # remove chars before :// and a trailing slash
         protocol_less_url = re.sub(r"^[a-zA-Z]+://", "", feed_url).rstrip("/")
         podcast_guid = str(uuid.uuid5(PODCAST_NAMESPACE_GUID_SEED, protocol_less_url))
         xml_content = xml_content.replace(
@@ -537,6 +580,7 @@ def _add_podcast_namespace(feed_path, feed_url):
 
 def _upload_cover_image(s3):
     try:
+        # retrieve the media type of the cover image, it also returns encoding, but ignores it
         content_type, _ = mimetypes.guess_type(COVER_IMAGE_PATH)
         s3.upload_file(
             COVER_IMAGE_PATH,
@@ -546,7 +590,9 @@ def _upload_cover_image(s3):
         )
         return f"https://{BUCKET_NAME}.s3.{REGION}.amazonaws.com/{COVER_IMAGE_S3_KEY}"
     except (ClientError, S3UploadFailedError, OSError) as e:
-        logging.error("Exception on regenerate_rss_feed(): Failed to upload cover image: %s", e)
+        logging.error(
+            "Exception on regenerate_rss_feed(): Failed to upload cover image: %s", e
+        )
         return None
 
 
@@ -555,6 +601,8 @@ def _get_published_episodes():
     try:
         conn = get_connection()
         cursor = conn.cursor()
+        # gets all podcastEpisode rows with a non-null s3_url
+        # and published_at, ordered by published_at descending
         cursor.execute(
             "SELECT * FROM podcastEpisode WHERE s3_url IS NOT NULL "
             "AND published_at IS NOT NULL ORDER BY published_at DESC"
@@ -562,7 +610,8 @@ def _get_published_episodes():
         return cursor.fetchall()
     except sqlite3.Error as e:
         logging.error(
-            "Exception on regenerate_rss_feed(): Failed to read podcastEpisode rows: %s", e
+            "Exception on regenerate_rss_feed(): Failed to read podcastEpisode rows: %s",
+            e,
         )
         return None
     finally:
@@ -570,9 +619,14 @@ def _get_published_episodes():
             conn.close()
 
 
+# Build the RSS feed XML with iTunes tags and Podcasting 2.0 namespace
+# add metadata to the feed object
 def _build_feed_generator(cover_image_url):
+    # intialize a feed object
     fg = FeedGenerator()
+    # load podcast extension to add iTunes tags to the feed
     fg.load_extension("podcast")
+    # add metadata to the feed object
     fg.title(PODCAST_TITLE)
     fg.link(href=PODCAST_WEBSITE_URL, rel="alternate")
     fg.link(href=RSS_FEED_URL, rel="self", type="application/rss+xml")
@@ -585,6 +639,7 @@ def _build_feed_generator(cover_image_url):
     return fg
 
 
+# Add each episode to the feed object as an entry, with iTunes tags and enclosure for the MP3 file
 def _add_episode_entries(fg, episodes, cover_image_url):
     for ep in episodes:
         fe = fg.add_entry()
@@ -592,8 +647,14 @@ def _add_episode_entries(fg, episodes, cover_image_url):
         fe.title(ep["title"])
         fe.description(ep["description"])
         fe.link(href=ep["s3_url"])
+        # stores the MP3 file's URL, size,
+        # and MIME type in the <enclosure>
+        # tag for podcast clients to download + play
         fe.enclosure(ep["s3_url"], str(ep["file_size_bytes"] or 0), "audio/mpeg")
 
+        # converts the published_at string
+        # to a datetime object, and ensures
+        # it has a timezone (UTC if missing)
         published_dt = datetime.datetime.fromisoformat(ep["published_at"])
         if published_dt.tzinfo is None:
             published_dt = published_dt.replace(tzinfo=datetime.timezone.utc)
@@ -610,15 +671,20 @@ def regenerate_rss_feed():
     """Rebuild the RSS feed XML from every published podcast episode in the DB."""
     s3 = boto3.client("s3", region_name=REGION)
     try:
+        # ensure the S3 bucket exists and is public
+        # create the bucket if DNE
         _ensure_public_bucket(s3)
     except ClientError as e:
-        logging.error("Exception on regenerate_rss_feed(): Failed to create bucket: %s", e)
+        logging.error(
+            "Exception on regenerate_rss_feed(): Failed to create bucket: %s", e
+        )
         return None
 
     # adds cover image to bucket
     cover_image_url = _upload_cover_image(s3)
 
     # channel <link> must resolve to a real webpage, not the feed XML itself
+    # so we add a simple HTML page with the podcast title, description, and cover image
     _upload_podcast_website(s3, cover_image_url)
 
     # reads DB, produces XML
@@ -632,13 +698,17 @@ def regenerate_rss_feed():
 
     # save to a .xml file in /temp folder
     temp_path = os.path.join(tempfile.gettempdir(), "research_digest_podcast")
+    logging.info("Temp path for RSS feed: %s", temp_path)
     if not os.path.isdir(temp_path):
         os.mkdir(temp_path)
     feed_path = os.path.join(temp_path, "feed.xml")
     try:
+        # writes the RSS feed XML to a file at feed_path, with pretty formatting
         fg.rss_file(feed_path, pretty=True)
     except OSError as e:
-        logging.error("Exception on regenerate_rss_feed(): Failed to write RSS XML file: %s", e)
+        logging.error(
+            "Exception on regenerate_rss_feed(): Failed to write RSS XML file: %s", e
+        )
         return None
 
     # feedgen has no support for the Podcasting 2.0 "podcast" namespace, so patch it in
@@ -651,6 +721,7 @@ def upload_rss_to_s3(feed_path):
     """Upload the RSS feed file to S3 and return its public URL."""
     s3 = boto3.client("s3", region_name=REGION)
     try:
+        # ensure the S3 bucket exists and is public
         _ensure_public_bucket(s3)
     except ClientError as e:
         logging.error("Exception on upload_rss_to_s3(): Failed to create bucket: %s", e)
@@ -666,11 +737,15 @@ def upload_rss_to_s3(feed_path):
             ExtraArgs={"ContentType": "application/rss+xml"},
         )
     except (ClientError, S3UploadFailedError, OSError) as e:
-        logging.error("Exception on upload_rss_to_s3(): Failed to upload RSS feed: %s", e)
+        logging.error(
+            "Exception on upload_rss_to_s3(): Failed to upload RSS feed: %s", e
+        )
         return None
 
     # check if url request is 200
     try:
+        # make a HEAD request to the RSS feed URL to verify that it is accessible
+        # returns a Response object with status_code and headers
         res = requests.head(RSS_FEED_URL, timeout=REQUEST_TIMEOUT)
         if res.status_code != 200:
             logging.error(
@@ -688,12 +763,11 @@ def main():
     """Run the full daily pipeline: fetch, filter, summarize, and publish."""
     # initialize database
     init_db()
-    preferences = read_config_json(
-        "config.json"
-    )
+    # get user preferences from config.json
+    preferences = read_config_json("config.json")
 
     logging.info("Executing fetch_papers()...")
-    # Get hot arXiv papers + their details from today, per config.json's categories/keywords
+    # Get latest arXiv papers + their details from today, per config.json's categories/keywords
     papers: list[Paper] = fetch_papers(
         preferences.arxiv_categories,
         preferences.keywords,
@@ -701,7 +775,7 @@ def main():
     )
     logging.info("Papers fetched! These are the papers fetched:")
 
-    # Filter papers to get top N (papers_per_digest) ready, store in database table papers
+    # FILTER PAPERS to get top N (papers_per_digest) ready, store in database table papers
     logging.info("Filtering papers...")
     dailyrun_id = LLMClient.filter_papers(
         papers,
@@ -718,12 +792,15 @@ def main():
     logging.info(
         "Summarizing papers to populate ai_summary and ai_why_relevant fields ..."
     )
+    # SUMMARIZE PAPERS
     LLMClient.summarize_papers(preferences.user_intention, preferences.tone)
     logging.info("Generating newsletter content...")
+    # GENERATE NEWSLETTER CONTENT
     LLMClient.generate_newsletter_content(
         dailyrun_id, preferences.tone, preferences.user_intention
     )
     logging.info("Generating podcast script...")
+    # GENERATE PODCAST SCRIPT
     LLMClient.generate_podcast_script(
         dailyrun_id, preferences.tone, preferences.user_intention
     )
@@ -732,6 +809,7 @@ def main():
     # use existing newsletter tempalte for html, deterministc
     newsletter_html = generate_newsletter_html(dailyrun_id)
     newsletter_id = get_id(id_type="newsletter", dailyrun_id=dailyrun_id)
+    # send the newsletter via SMTP and record the send time in the database
     email_newsletter(
         newsletter_html,
         os.getenv("SENDER_EMAIL"),
@@ -742,13 +820,16 @@ def main():
     # gets returned s3 url and metadata
     podcast_id = get_id(id_type="podcastEpisode", dailyrun_id=dailyrun_id)
     logging.info("Building today's podcast episode...")
+    # generate podcast episode MP3 file from the script in the database
+    # return its local path
     podcast_ep_path = build_podcast_episode(podcast_id)
     # upload podcast episode to RSS
-    # boto3 pushes MP3 to S3, saves URL + metadata to podcast_episodes
+    # boto3 pushes MP3 to S3, saves S3 URL + metadata to podcast_episodes
     if podcast_ep_path:
         logging.info("Uploading today's podcast episode to S3...")
         podcast_url = upload_podcast_episode(podcast_ep_path=podcast_ep_path)
         if podcast_url:
+            # update podcastEpisode row with s3_url and published_at
             update_row_db(
                 col_name="s3_url",
                 new_value=podcast_url,
@@ -767,6 +848,7 @@ def main():
             feed_path = regenerate_rss_feed()
             if feed_path:
                 logging.info("Uploading RSS Feed file to S3...")
+                # upload the RSS feed XML to S3 and return its public URL
                 rss_feed_url = upload_rss_to_s3(feed_path)
 
                 # update dailyRun row completed_at and status columns

@@ -29,8 +29,6 @@ class Preferences(BaseModel):
     timezone: str
     papers_per_digest: int
     max_papers_fetched_per_category: int
-    llm_provider: str
-    llm_model: str
     user_intention: str
     tone: str
 
@@ -94,8 +92,10 @@ class SelectedPaperIDs(BaseModel):
 
     selected_ids: list[str]
 
+    # adds a validation step to ensure the number of selected paper IDs matches the expected count
     @field_validator("selected_ids")
     @classmethod
+    # cls is the model class, v is the value being validated, info contains context
     def validate_exact_count(cls, v: list[str], info: ValidationInfo) -> list[str]:
         """Ensure only appropriate number of paper IDs are selected by the agent."""
         # PydanticAI automatically places the `deps` object into `info.context`
